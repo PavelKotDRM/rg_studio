@@ -57,6 +57,17 @@ rustup update stable
 cargo run --release
 ```
 
+To build a Linux executable from Windows with Docker Desktop, run:
+
+```powershell
+.\scripts\build-linux-docker.ps1
+```
+
+The script writes the Linux binary and `rg-studio-linux.tar.gz` to `dist\linux`.
+The archive preserves the executable bit. Docker must be running; Cargo
+dependencies and Linux build outputs are cached in Docker volumes. The binary
+requires the ripgrep CLI to be installed separately.
+
 At runtime, the app looks for `rg.exe` or `rg` next to its executable and then
 in the executable's parent directory before falling back to `PATH`. The
 ripgrep source code and executable are not bundled with this repository. The
