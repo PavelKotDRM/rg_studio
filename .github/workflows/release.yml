@@ -125,7 +125,7 @@ jobs:
       contents: write
     steps:
       - name: Download release archives
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: rg-studio-${{ github.ref_name }}-*
           path: release
