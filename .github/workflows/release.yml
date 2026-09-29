@@ -110,7 +110,7 @@ jobs:
           Compress-Archive -Path "target\release\rg-studio.exe" -DestinationPath "dist\$archive" -Force
 
       - name: Upload release archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rg-studio-${{ github.ref_name }}-${{ matrix.platform }}
           path: dist/*
