@@ -1,5 +1,6 @@
 use std::{
     ffi::OsString,
+    ops::Range,
     process::Command,
     sync::mpsc::{self, Receiver, TryRecvError},
     thread,
@@ -16,12 +17,16 @@ use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+const OUTPUT_PAGE_BYTES: usize = 64 * 1024;
+
 pub(crate) struct SearchOutput {
     pub(crate) executable: String,
     pub(crate) exit_code: Option<i32>,
     pub(crate) success: bool,
     pub(crate) stdout: String,
     pub(crate) stderr: String,
+    pub(crate) stdout_pages: Vec<Range<usize>>,
+    pub(crate) stderr_pages: Vec<Range<usize>>,
 }
 
 #[derive(Default)]
@@ -30,6 +35,7 @@ pub(crate) struct SearchController {
     pub(crate) show_results: bool,
     pub(crate) output: Option<SearchOutput>,
     pub(crate) error: Option<String>,
+    pub(crate) output_page: usize,
     receiver: Option<Receiver<Result<SearchOutput, String>>>,
 }
 
@@ -42,6 +48,7 @@ impl SearchController {
         self.show_results = true;
         self.output = None;
         self.error = None;
+        self.output_page = 0;
 
         let (sender, receiver) = mpsc::channel();
         let worker = thread::Builder::new()
@@ -107,14 +114,43 @@ fn execute(state: &CommandState) -> Result<SearchOutput, String> {
             executable
             )
         })?;
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
 
     Ok(SearchOutput {
         executable: executable.to_string_lossy().into_owned(),
         exit_code: output.status.code(),
         success: output.status.success(),
-        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        stdout_pages: output_page_ranges(&stdout),
+        stderr_pages: output_page_ranges(&stderr),
+        stdout,
+        stderr,
     })
+}
+
+fn output_page_ranges(output: &str) -> Vec<Range<usize>> {
+    let mut pages = Vec::new();
+    let mut start = 0;
+
+    while start < output.len() {
+        let mut end = start.saturating_add(OUTPUT_PAGE_BYTES).min(output.len());
+        if end < output.len() {
+            while !output.is_char_boundary(end) {
+                end -= 1;
+            }
+            if let Some(newline) = output[start..end].rfind('\n') {
+                let line_end = start + newline + 1;
+                if line_end - start >= OUTPUT_PAGE_BYTES / 2 {
+                    end = line_end;
+                }
+            }
+        }
+
+        pages.push(start..end);
+        start = end;
+    }
+
+    pages
 }
 
 fn resolve_executable() -> OsString {
@@ -143,7 +179,7 @@ mod tests {
 
     use crate::command::CommandState;
 
-    use super::{execute, resolve_executable};
+    use super::{OUTPUT_PAGE_BYTES, execute, output_page_ranges, resolve_executable};
 
     #[test]
     fn resolves_a_bundled_binary_or_path_command() {
@@ -183,5 +219,33 @@ mod tests {
         let result = execute(&state).expect("ripgrep should start");
         assert!(result.success, "ripgrep failed: {}", result.stderr);
         assert!(result.stdout.contains("fn main"));
+    }
+
+    #[test]
+    fn output_pages_cover_text_without_splitting_utf8() {
+        let text = format!(
+            "{}\n{}",
+            "a".repeat(OUTPUT_PAGE_BYTES / 2),
+            "🙂".repeat(OUTPUT_PAGE_BYTES / 2)
+        );
+        let pages = output_page_ranges(&text);
+        let mut next_start = 0;
+
+        assert!(text[..pages[0].end].ends_with('\n'));
+        for page in pages {
+            assert_eq!(page.start, next_start);
+            assert!(page.end > page.start);
+            assert!(page.end - page.start <= OUTPUT_PAGE_BYTES);
+            assert!(text.is_char_boundary(page.start));
+            assert!(text.is_char_boundary(page.end));
+            next_start = page.end;
+        }
+
+        assert_eq!(next_start, text.len());
+    }
+
+    #[test]
+    fn empty_output_has_no_pages() {
+        assert!(output_page_ranges("").is_empty());
     }
 }

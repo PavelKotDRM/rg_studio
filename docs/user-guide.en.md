@@ -86,8 +86,10 @@ ripgrep build.
 
 For a filesystem search, review **Generated command** and click **Run ripgrep**.
 The CLI runs in the background. The results window shows the executable used,
-the exit status, stdout, and stderr. Output text can be selected. Exit code `1`
-means no matches were found; it is a normal ripgrep result, not an app error.
+the exit status, stdout, and stderr. Large output is split into pages; use
+**Previous** and **Next** to navigate it. The full output remains available, and
+text on the current page can be selected. Exit code `1` means no matches were
+found; it is a normal ripgrep result, not an app error.
 
 Click **Copy command** to copy the displayed command for use in a terminal.
 The command display applies OS-appropriate quoting to the pattern, path, and

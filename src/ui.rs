@@ -596,6 +596,7 @@ fn search_results_window(app: &mut RgStudio, context: &egui::Context, palette: P
         show_results,
         output,
         error,
+        output_page,
         ..
     } = &mut app.search;
 
@@ -641,42 +642,63 @@ fn search_results_window(app: &mut RgStudio, context: &egui::Context, palette: P
                 );
                 ui.separator();
 
-                egui::ScrollArea::vertical()
-                    .max_height(420.0)
-                    .min_scrolled_height(0.0)
-                    .show(ui, |ui| {
-                        if !result.stdout.is_empty() {
-                            ui.add(
-                                egui::Label::new(
-                                    RichText::new(result.stdout.as_str())
-                                        .monospace()
-                                        .color(palette.text),
-                                )
-                                .selectable(true)
-                                .wrap(),
-                            );
+                let stdout_page_count = result.stdout_pages.len();
+                let page_count = stdout_page_count + result.stderr_pages.len();
+                if page_count == 0 {
+                    ui.label(
+                        RichText::new("ripgrep returned no output.").color(palette.muted_text),
+                    );
+                } else {
+                    *output_page = (*output_page).min(page_count - 1);
+                    let current_page = *output_page;
+                    ui.horizontal(|ui| {
+                        if ui
+                            .add_enabled(current_page > 0, egui::Button::new("Previous"))
+                            .clicked()
+                        {
+                            *output_page -= 1;
                         }
-                        if !result.stderr.is_empty() {
-                            if !result.stdout.is_empty() {
-                                ui.separator();
-                            }
-                            ui.add(
-                                egui::Label::new(
-                                    RichText::new(result.stderr.as_str())
-                                        .monospace()
-                                        .color(palette.warning),
-                                )
-                                .selectable(true)
-                                .wrap(),
-                            );
-                        }
-                        if result.stdout.is_empty() && result.stderr.is_empty() {
-                            ui.label(
-                                RichText::new("ripgrep returned no output.")
-                                    .color(palette.muted_text),
-                            );
+                        ui.label(format!("Page {} of {page_count}", current_page + 1));
+                        if ui
+                            .add_enabled(current_page + 1 < page_count, egui::Button::new("Next"))
+                            .clicked()
+                        {
+                            *output_page += 1;
                         }
                     });
+
+                    let (stream, text, range, color) = if current_page < stdout_page_count {
+                        (
+                            "stdout",
+                            &result.stdout,
+                            &result.stdout_pages[current_page],
+                            palette.text,
+                        )
+                    } else {
+                        let stderr_page = current_page - stdout_page_count;
+                        (
+                            "stderr",
+                            &result.stderr,
+                            &result.stderr_pages[stderr_page],
+                            palette.warning,
+                        )
+                    };
+                    ui.label(RichText::new(stream).small().color(palette.muted_text));
+
+                    egui::ScrollArea::vertical()
+                        .id_salt(("ripgrep_output_page", current_page))
+                        .max_height(420.0)
+                        .min_scrolled_height(0.0)
+                        .show(ui, |ui| {
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(&text[range.clone()]).monospace().color(color),
+                                )
+                                .selectable(true)
+                                .wrap(),
+                            );
+                        });
+                }
             } else if error.is_none() && !*running {
                 ui.label(
                     RichText::new("Run a search to see its output.").color(palette.muted_text),
