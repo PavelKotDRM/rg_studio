@@ -1,4 +1,4 @@
-FROM rust:1.98.1-bookworm
+FROM rust:latest
 
 ENV RUSTUP_TOOLCHAIN=1.98.1
 
