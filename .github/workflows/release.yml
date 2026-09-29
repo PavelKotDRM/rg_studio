@@ -81,7 +81,7 @@ jobs:
             libxrandr-dev
 
       - name: Set up Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v2
 
       - name: Build release binary
         run: cargo build --release --locked
