@@ -3,13 +3,14 @@ name = "rg-studio"
 version = "0.1.0"
 edition = "2024"
 build = "build.rs"
-description = "A visual command composer for ripgrep"
+description = "A visual command composer and runner for ripgrep"
 license = "MIT"
 
 [dependencies]
 eframe = { version = "0.36", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
 egui = "0.36"
 regex = "1"
+shlex = "2"
 
 [build-dependencies]
 vergen = { version = "10", features = ["build", "cargo", "rustc"] }

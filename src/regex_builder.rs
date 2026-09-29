@@ -63,7 +63,7 @@ impl Atom {
         )
     }
 
-    const fn accepts_quantifier(self) -> bool {
+    pub(crate) const fn accepts_quantifier(self) -> bool {
         !matches!(self, Self::Alternation | Self::WordBoundary)
     }
 }
@@ -151,6 +151,12 @@ impl RegexPart {
         if !self.atom.accepts_quantifier() {
             return atom;
         }
+
+        let atom = if self.atom == Atom::Raw && self.quantifier != Quantifier::Once {
+            format!("(?:{atom})")
+        } else {
+            atom
+        };
 
         let suffix = match self.quantifier {
             Quantifier::Once => String::new(),
@@ -249,5 +255,21 @@ mod tests {
     fn preserves_an_existing_pattern() {
         let builder = RegexBuilder::from_pattern(r"foo\s+bar");
         assert_eq!(builder.pattern(), r"foo\s+bar");
+    }
+
+    #[test]
+    fn quantifier_applies_to_the_entire_raw_expression() {
+        let builder = RegexBuilder {
+            parts: vec![RegexPart {
+                atom: Atom::Raw,
+                value: "foo|bar".into(),
+                quantifier: Quantifier::OneOrMore,
+                ..RegexPart::default()
+            }],
+            ..RegexBuilder::default()
+        };
+
+        assert_eq!(builder.pattern(), "(?:foo|bar)+");
+        assert_eq!(builder.validation_error(), None);
     }
 }

@@ -1997,6 +1997,7 @@ dependencies = [
  "eframe",
  "egui",
  "regex",
+ "shlex",
  "vergen",
  "vergen-git2",
 ]
