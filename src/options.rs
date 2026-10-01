@@ -60,8 +60,8 @@ pub(crate) const OPTIONS: &[OptionSpec] = &[
     value(
         Category::Search,
         "--regexp",
-        "Additional pattern",
-        "PATTERN",
+        "Additional regex pattern",
+        "e.g. TODO|FIXME",
     ),
     value(
         Category::Search,
@@ -70,7 +70,12 @@ pub(crate) const OPTIONS: &[OptionSpec] = &[
         "PATTERNFILE",
     ),
     value(Category::Search, "--pre", "Preprocessor command", "COMMAND"),
-    value(Category::Search, "--pre-glob", "Preprocessor glob", "GLOB"),
+    value(
+        Category::Search,
+        "--pre-glob",
+        "Preprocessor file glob",
+        "e.g. *.pdf",
+    ),
     switch(Category::Search, "--search-zip", "Search compressed files"),
     switch(Category::Search, "--case-sensitive", "Case sensitive"),
     switch(Category::Search, "--crlf", "Use CRLF line terminators"),
@@ -134,14 +139,24 @@ pub(crate) const OPTIONS: &[OptionSpec] = &[
     ),
     switch(Category::Search, "--binary", "Search binary files"),
     switch(Category::Files, "--follow", "Follow symbolic links"),
-    value(Category::Files, "--glob", "Include or exclude glob", "GLOB"),
+    value(
+        Category::Files,
+        "--glob",
+        "File name include/exclude glob",
+        "e.g. *.rs",
+    ),
     switch(
         Category::Files,
         "--glob-case-insensitive",
         "Case-insensitive globs",
     ),
     switch(Category::Files, "--hidden", "Include hidden files"),
-    value(Category::Files, "--iglob", "Case-insensitive glob", "GLOB"),
+    value(
+        Category::Files,
+        "--iglob",
+        "Case-insensitive file name glob",
+        "e.g. *.rs",
+    ),
     value(
         Category::Files,
         "--ignore-file",

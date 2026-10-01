@@ -7,7 +7,7 @@ pub struct CommandState {
     pub pattern: String,
     /// Path in which ripgrep should search.
     pub path: String,
-    /// Already validated option arguments, without the executable name.
+    /// Option arguments to pass before the pattern and path.
     pub options: Vec<String>,
     /// Advanced command-line arguments, parsed without invoking a shell.
     pub extra_arguments: String,
@@ -16,19 +16,21 @@ pub struct CommandState {
 impl CommandState {
     /// Returns the command formatted for the current operating system shell.
     #[must_use]
-    pub fn command(&self) -> String {
+    pub fn command(&self) -> Result<String, String> {
+        let extra_arguments = shlex::split(&self.extra_arguments)
+            .ok_or_else(|| "Additional arguments contain unmatched quotes.".to_owned())?;
         let mut parts = vec!["rg".to_owned()];
         parts.extend(self.options.iter().map(|value| quote(value)));
-        if !self.extra_arguments.trim().is_empty() {
-            parts.push(self.extra_arguments.trim().to_owned());
-        }
+        parts.extend(extra_arguments.iter().map(|value| quote(value)));
         if !self.pattern.is_empty() {
+            parts.push("--regexp".to_owned());
             parts.push(quote(&self.pattern));
         }
         if !self.path.is_empty() {
+            parts.push("--".to_owned());
             parts.push(quote(&self.path));
         }
-        parts.join(" ")
+        Ok(parts.join(" "))
     }
 
     /// Returns process arguments for executing ripgrep without invoking a shell.
@@ -133,16 +135,18 @@ mod tests {
             extra_arguments: String::new(),
         };
 
-        let command = state.command();
+        let command = state.command().unwrap();
         assert!(command.starts_with("rg --ignore-case "));
         assert!(command.contains("--glob=*.rs"));
         assert!(command.contains("hello world"));
         assert!(command.contains("src folder"));
+        assert!(command.contains("--regexp"));
+        assert!(command.contains(" -- "));
     }
 
     #[test]
     fn omits_empty_positional_arguments() {
-        assert_eq!(CommandState::default().command(), "rg");
+        assert_eq!(CommandState::default().command().unwrap(), "rg");
     }
 
     #[test]
@@ -170,12 +174,33 @@ mod tests {
     }
 
     #[test]
+    fn generated_command_keeps_file_globs_separate_from_the_regex_and_path() {
+        let state = CommandState {
+            pattern: "main".into(),
+            path: "-src".into(),
+            options: vec!["--glob=*.rs".into()],
+            ..CommandState::default()
+        };
+
+        let arguments = state.arguments().unwrap();
+        assert_eq!(
+            arguments,
+            ["--glob=*.rs", "--regexp", "main", "--", "-src"].map(OsString::from)
+        );
+
+        let command = state.command().unwrap();
+        assert!(command.contains("--glob=*.rs"));
+        assert!(command.contains("--regexp main --"));
+    }
+
+    #[test]
     fn rejects_invalid_extra_argument_quotes_and_missing_pattern() {
         let invalid_quotes = CommandState {
             extra_arguments: "\"unterminated".into(),
             ..CommandState::default()
         };
         assert!(invalid_quotes.arguments().is_err());
+        assert!(invalid_quotes.command().is_err());
 
         assert!(CommandState::default().arguments().is_err());
     }

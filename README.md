@@ -17,7 +17,8 @@ the generated command to the clipboard.
 - OS-appropriate quoting for patterns, paths, and option values.
 - A live text preview that highlights matches in sample text.
 - Background ripgrep execution without launching a shell; the results window
-  shows stdout, stderr, and the exit code.
+  explains common errors, shows standard matches as readable file/line cards,
+  keeps full raw output available, and separates results and messages.
 - Light and dark themes, readable typography, and responsive option cards.
 - An About window with the version, Git SHA, build time, Rust version, and target
   reported by vergen 10.

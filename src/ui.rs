@@ -108,7 +108,7 @@ fn render_search_form(app: &mut RgStudio, ui: &mut egui::Ui, palette: Palette) {
         .show(ui, |ui| {
             ui.columns(2, |columns| {
                 columns[0].label(
-                    RichText::new("SEARCH PATTERN")
+                    RichText::new("SEARCH PATTERN (REGEX)")
                         .small()
                         .strong()
                         .color(palette.muted_text),
@@ -124,6 +124,9 @@ fn render_search_form(app: &mut RgStudio, ui: &mut egui::Ui, palette: Palette) {
                             )
                             .font(TextStyle::Monospace)
                             .hint_text("e.g. TODO|FIXME"),
+                        )
+                        .on_hover_text(
+                            "This searches file contents. For file names, use Files > Include/exclude glob, e.g. *.rs.",
                         )
                         .changed();
                     open_builder = ui.button("Regex builder").clicked();
@@ -476,8 +479,28 @@ fn render_preview(app: &mut RgStudio, ui: &mut egui::Ui, palette: Palette, previ
                                     PreviewResult::Matches(spans) => spans.as_slice(),
                                     _ => &[],
                                 };
-                                let job = highlighted_job(&app.sample_text, spans, palette);
-                                ui.add(egui::Label::new(job).wrap());
+                                let mut layouter =
+                                    |ui: &egui::Ui,
+                                     text: &dyn egui::TextBuffer,
+                                     wrap_width: f32| {
+                                        let mut job =
+                                            highlighted_job(text.as_str(), spans, palette);
+                                        job.wrap.max_width = wrap_width;
+                                        ui.fonts_mut(|fonts| fonts.layout_job(job))
+                                    };
+                                let output_height = ui.available_height().max(0.0);
+                                ui.add_sized(
+                                    egui::vec2(ui.available_width(), output_height),
+                                    egui::TextEdit::multiline(&mut app.sample_text)
+                                        .id_salt("preview_matches")
+                                        .font(TextStyle::Monospace)
+                                        .desired_rows(4)
+                                        .background_color(palette.surface)
+                                        .text_color(Color32::WHITE)
+                                        .frame(egui::Frame::NONE)
+                                        .interactive(false)
+                                        .layouter(&mut layouter),
+                                );
                             }
                         });
                 });
@@ -493,6 +516,7 @@ fn highlighted_job(
     palette: Palette,
 ) -> egui::text::LayoutJob {
     let mut job = egui::text::LayoutJob::default();
+    job.keep_trailing_whitespace = true;
     let normal = egui::TextFormat {
         font_id: egui::FontId::monospace(14.0),
         color: palette.text,
@@ -533,6 +557,11 @@ fn highlighted_job(
 
 fn render_command(app: &mut RgStudio, ui: &mut egui::Ui, palette: Palette) {
     let command = app.command.command();
+    let command_error = app.command.arguments().err();
+    let mut command_text = command
+        .as_deref()
+        .unwrap_or("Cannot build command: fix Advanced arguments.")
+        .to_owned();
     let mut run_search = false;
     egui::Frame::group(ui.style())
         .fill(palette.surface)
@@ -541,27 +570,37 @@ fn render_command(app: &mut RgStudio, ui: &mut egui::Ui, palette: Palette) {
             ui.horizontal(|ui| {
                 ui.strong("Generated command");
                 ui.label(
-                    RichText::new("Ready to paste into your terminal")
-                        .small()
-                        .color(palette.muted_text),
+                    RichText::new(
+                        command_error
+                            .as_deref()
+                            .unwrap_or("Ready to paste into your terminal"),
+                    )
+                    .small()
+                    .color(if command_error.is_some() {
+                        palette.danger
+                    } else {
+                        palette.muted_text
+                    }),
                 );
             });
             ui.horizontal(|ui| {
                 let input_width = (ui.available_width() - 300.0).max(120.0);
                 ui.add_sized(
                     egui::vec2(input_width, 36.0),
-                    themed_text_edit(egui::TextEdit::singleline(&mut command.as_str()), palette)
+                    themed_text_edit(egui::TextEdit::singleline(&mut command_text), palette)
                         .font(TextStyle::Monospace)
                         .interactive(false),
                 );
                 let run_label = if app.search.running {
                     "Searching..."
+                } else if command_error.is_some() {
+                    "Fix command first"
                 } else {
                     "Run ripgrep"
                 };
                 run_search = ui
                     .add_enabled(
-                        !app.search.running,
+                        !app.search.running && command_error.is_none(),
                         egui::Button::new(RichText::new(run_label).color(palette.accent_text))
                             .fill(palette.accent)
                             .min_size(egui::vec2(132.0, 36.0)),
@@ -580,7 +619,8 @@ fn render_command(app: &mut RgStudio, ui: &mut egui::Ui, palette: Palette) {
                     palette.text
                 };
                 if ui
-                    .add(
+                    .add_enabled(
+                        command_error.is_none(),
                         egui::Button::new(RichText::new(label).color(button_text))
                             .fill(button_fill)
                             .stroke(Stroke::new(1.0, palette.border))
@@ -588,8 +628,10 @@ fn render_command(app: &mut RgStudio, ui: &mut egui::Ui, palette: Palette) {
                     )
                     .clicked()
                 {
-                    ui.ctx().copy_text(command.clone());
-                    app.copied = true;
+                    if let Ok(command) = &command {
+                        ui.ctx().copy_text(command.clone());
+                        app.copied = true;
+                    }
                 }
             });
         });
@@ -607,6 +649,7 @@ fn search_results_window(app: &mut RgStudio, context: &egui::Context, palette: P
         output,
         error,
         output_page,
+        output_stream,
         ..
     } = &mut app.search;
 
@@ -617,7 +660,7 @@ fn search_results_window(app: &mut RgStudio, context: &egui::Context, palette: P
     egui::Window::new("Ripgrep results")
         .open(show_results)
         .default_width(900.0)
-        .default_height(520.0)
+        .default_height(560.0)
         .resizable(true)
         .show(context, |ui| {
             if *running {
@@ -632,82 +675,180 @@ fn search_results_window(app: &mut RgStudio, context: &egui::Context, palette: P
             }
 
             if let Some(result) = output.as_ref() {
-                let (status, color) = if result.success {
-                    ("Search completed".to_owned(), palette.success)
+                let (status, status_detail, color) = if result.success {
+                    (
+                        "Search completed",
+                        "ripgrep finished successfully.",
+                        palette.success,
+                    )
                 } else {
                     match result.exit_code {
-                        Some(1) => ("No matches (exit code 1)".to_owned(), palette.muted_text),
-                        Some(code) => (format!("ripgrep exited with code {code}"), palette.danger),
+                        Some(1) => (
+                            "No matches found",
+                            "Exit code 1 is normal when ripgrep completes a search without matches.",
+                            palette.muted_text,
+                        ),
+                        Some(_) => (
+                            "ripgrep reported an error",
+                            "Open Diagnostics to see ripgrep's error messages.",
+                            palette.danger,
+                        ),
                         None => (
-                            "ripgrep terminated without an exit code".to_owned(),
+                            "ripgrep ended without an exit code",
+                            "The process may have been interrupted; check Diagnostics for details.",
                             palette.danger,
                         ),
                     }
                 };
-                ui.colored_label(color, status);
+                ui.horizontal_wrapped(|ui| {
+                    ui.colored_label(color, RichText::new(status).strong());
+                    ui.separator();
+                    ui.label(match result.exit_code {
+                        Some(code) => format!("Exit code: {code}"),
+                        None => "Exit code: unavailable".to_owned(),
+                    });
+                    ui.separator();
+                    ui.label(format!("Elapsed: {:.3} s", result.elapsed.as_secs_f64()));
+                });
+                ui.label(
+                    RichText::new(status_detail)
+                        .small()
+                        .color(palette.muted_text),
+                );
+                if !result.success
+                    && result.exit_code != Some(1)
+                    && let Some(explanation) = diagnostic_explanation(&result.stderr)
+                {
+                    egui::Frame::group(ui.style())
+                        .fill(palette.raised_surface)
+                        .stroke(Stroke::new(1.0, palette.warning))
+                        .show(ui, |ui| {
+                            ui.strong("What this means");
+                            ui.label(explanation);
+                        });
+                }
                 ui.label(
                     RichText::new(format!("Executable: {}", result.executable))
                         .small()
                         .color(palette.muted_text),
                 );
+
+                egui::CollapsingHeader::new("Command used")
+                    .id_salt("ripgrep_command")
+                    .show(ui, |ui| {
+                        egui::ScrollArea::horizontal()
+                            .max_height(36.0)
+                            .show(ui, |ui| {
+                                ui.add(
+                                    egui::Label::new(
+                                        RichText::new(&result.command).monospace(),
+                                    )
+                                    .selectable(true)
+                                    .wrap_mode(egui::TextWrapMode::Extend),
+                                );
+                            });
+                    });
                 ui.separator();
 
-                let stdout_page_count = result.stdout_pages.len();
-                let page_count = stdout_page_count + result.stderr_pages.len();
-                if page_count == 0 {
-                    ui.label(
-                        RichText::new("ripgrep returned no output.").color(palette.muted_text),
-                    );
-                } else {
-                    *output_page = (*output_page).min(page_count - 1);
-                    let current_page = *output_page;
-                    ui.horizontal(|ui| {
-                        if ui
-                            .add_enabled(current_page > 0, egui::Button::new("Previous"))
-                            .clicked()
-                        {
-                            *output_page -= 1;
-                        }
-                        ui.label(format!("Page {} of {page_count}", current_page + 1));
-                        if ui
-                            .add_enabled(current_page + 1 < page_count, egui::Button::new("Next"))
-                            .clicked()
-                        {
-                            *output_page += 1;
-                        }
-                    });
+                ui.horizontal_wrapped(|ui| {
+                    let output_tab = ui
+                        .selectable_label(
+                            *output_stream == crate::search::OutputStream::Stdout,
+                            format!("Results ({})", output_line_count_label(&result.stdout)),
+                        )
+                        .on_hover_text(
+                            "Matches, file lists, or other output selected by ripgrep options.",
+                        );
+                    if output_tab.clicked() {
+                        *output_stream = crate::search::OutputStream::Stdout;
+                        *output_page = 0;
+                    }
 
-                    let (stream, text, range, color) = if current_page < stdout_page_count {
-                        (
-                            "stdout",
-                            &result.stdout,
-                            &result.stdout_pages[current_page],
-                            palette.text,
+                    let diagnostics_tab = ui
+                        .selectable_label(
+                            *output_stream == crate::search::OutputStream::Stderr,
+                            format!("Messages ({})", output_line_count_label(&result.stderr)),
                         )
-                    } else {
-                        let stderr_page = current_page - stdout_page_count;
-                        (
-                            "stderr",
-                            &result.stderr,
-                            &result.stderr_pages[stderr_page],
-                            palette.warning,
-                        )
+                        .on_hover_text("Warnings and errors reported by ripgrep.");
+                    if diagnostics_tab.clicked() {
+                        *output_stream = crate::search::OutputStream::Stderr;
+                        *output_page = 0;
+                    }
+                });
+
+                let (text, pages, text_color) = match *output_stream {
+                    crate::search::OutputStream::Stdout => (
+                        &result.stdout,
+                        &result.stdout_pages,
+                        palette.text,
+                    ),
+                    crate::search::OutputStream::Stderr => (
+                        &result.stderr,
+                        &result.stderr_pages,
+                        palette.warning,
+                    ),
+                };
+
+                if pages.is_empty() {
+                    let empty_message = match *output_stream {
+                        crate::search::OutputStream::Stdout if result.exit_code == Some(1) => {
+                            "No matching lines or files were found."
+                        }
+                        crate::search::OutputStream::Stdout if result.success => {
+                            "ripgrep wrote no output. This can be expected for quiet output modes."
+                        }
+                        crate::search::OutputStream::Stdout => {
+                            "No result output was written. Check Diagnostics for details."
+                        }
+                        crate::search::OutputStream::Stderr if result.success => {
+                            "No warnings or errors were reported."
+                        }
+                        crate::search::OutputStream::Stderr => {
+                            "No detailed message was returned."
+                        }
                     };
-                    ui.label(RichText::new(stream).small().color(palette.muted_text));
-
-                    egui::ScrollArea::vertical()
-                        .id_salt(("ripgrep_output_page", current_page))
-                        .max_height(420.0)
-                        .min_scrolled_height(0.0)
-                        .show(ui, |ui| {
-                            ui.add(
-                                egui::Label::new(
-                                    RichText::new(&text[range.clone()]).monospace().color(color),
-                                )
-                                .selectable(true)
-                                .wrap(),
-                            );
-                        });
+                    ui.label(RichText::new(empty_message).color(palette.muted_text));
+                } else if *output_stream == crate::search::OutputStream::Stdout {
+                    if let Some(readable_results) = result.readable_results.as_ref() {
+                        render_readable_results(ui, readable_results, palette);
+                        egui::CollapsingHeader::new("Raw ripgrep output")
+                            .id_salt("raw_ripgrep_output")
+                            .show(ui, |ui| {
+                                render_paged_output(
+                                    ui,
+                                    text,
+                                    pages,
+                                    output_page,
+                                    text_color,
+                                    *output_stream,
+                                );
+                            });
+                    } else {
+                        ui.label(
+                            RichText::new(
+                                "This output uses a special format, so the original text is shown.",
+                            )
+                            .small()
+                            .color(palette.muted_text),
+                        );
+                        render_paged_output(
+                            ui,
+                            text,
+                            pages,
+                            output_page,
+                            text_color,
+                            *output_stream,
+                        );
+                    }
+                } else {
+                    render_paged_output(
+                        ui,
+                        text,
+                        pages,
+                        output_page,
+                        text_color,
+                        *output_stream,
+                    );
                 }
             } else if error.is_none() && !*running {
                 ui.label(
@@ -715,6 +856,161 @@ fn search_results_window(app: &mut RgStudio, context: &egui::Context, palette: P
                 );
             }
         });
+}
+
+fn output_line_count_label(output: &str) -> String {
+    let count = output.lines().count();
+    format!("{count} {}", if count == 1 { "line" } else { "lines" })
+}
+
+fn render_readable_results(
+    ui: &mut egui::Ui,
+    results: &crate::search::ReadableResults,
+    palette: Palette,
+) {
+    if results.truncated {
+        ui.strong(format!(
+            "Showing the first {} of {} result lines from at least {} files.",
+            results.lines.len(),
+            results.total_lines,
+            results.file_count
+        ));
+    } else {
+        let file_label = if results.file_count == 1 {
+            "file"
+        } else {
+            "files"
+        };
+        ui.strong(format!(
+            "{} result lines in {} {file_label}.",
+            results.total_lines, results.file_count
+        ));
+    }
+    ui.label(
+        RichText::new(
+            "Each card names the file and shows the line containing a result. Long lines are shortened.",
+        )
+        .small()
+        .color(palette.muted_text),
+    );
+    if results
+        .lines
+        .iter()
+        .any(|line| line.path.to_ascii_lowercase().ends_with(".d"))
+    {
+        ui.label(
+            RichText::new(
+                "A .d file is a build dependency list; it can contain many paths on one long line.",
+            )
+            .small()
+            .color(palette.muted_text),
+        );
+    }
+
+    egui::ScrollArea::vertical()
+        .max_height(320.0)
+        .min_scrolled_height(0.0)
+        .show(ui, |ui| {
+            for (index, line) in results.lines.iter().enumerate() {
+                egui::Frame::group(ui.style()).show(ui, |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.strong(format!("Result {}", index + 1));
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(&line.path).monospace().color(palette.accent),
+                            )
+                            .wrap(),
+                        );
+                        if let Some(line_number) = line.line_number {
+                            ui.label(format!("Line {line_number}"));
+                        }
+                    });
+
+                    let matches = line.match_range.clone().into_iter().collect::<Vec<_>>();
+                    ui.add(
+                        egui::Label::new(highlighted_job(&line.preview, &matches, palette)).wrap(),
+                    );
+                    if line.shortened {
+                        ui.label(
+                            RichText::new(
+                                "Line shortened; expand Raw ripgrep output for the full text.",
+                            )
+                            .small()
+                            .color(palette.muted_text),
+                        );
+                    }
+                });
+            }
+        });
+}
+
+fn render_paged_output(
+    ui: &mut egui::Ui,
+    text: &str,
+    pages: &[Range<usize>],
+    page: &mut usize,
+    text_color: egui::Color32,
+    stream: crate::search::OutputStream,
+) {
+    *page = (*page).min(pages.len() - 1);
+    let current_page = *page;
+    ui.horizontal(|ui| {
+        if ui
+            .add_enabled(current_page > 0, egui::Button::new("Previous page"))
+            .clicked()
+        {
+            *page -= 1;
+        }
+        ui.label(format!("Page {} of {}", current_page + 1, pages.len()));
+        if ui
+            .add_enabled(
+                current_page + 1 < pages.len(),
+                egui::Button::new("Next page"),
+            )
+            .clicked()
+        {
+            *page += 1;
+        }
+    });
+
+    let range = &pages[current_page];
+    egui::ScrollArea::both()
+        .id_salt(("ripgrep_output_page", stream, current_page))
+        .max_height(360.0)
+        .min_scrolled_height(0.0)
+        .show(ui, |ui| {
+            ui.add(
+                egui::Label::new(
+                    RichText::new(&text[range.clone()])
+                        .monospace()
+                        .color(text_color),
+                )
+                .selectable(true)
+                .wrap_mode(egui::TextWrapMode::Extend),
+            );
+        });
+}
+
+fn diagnostic_explanation(stderr: &str) -> Option<&'static str> {
+    if stderr.is_empty() {
+        None
+    } else if stderr.contains("repetition operator missing expression") {
+        Some(
+            "`*` repeats the item before it, but this pattern starts with `*`. Use `.*` to match any characters in a line. For file names, use Files > Include/exclude glob, for example `*.rs`.",
+        )
+    } else if stderr.contains("regex parse error:") {
+        Some(
+            "The search pattern is a regular expression and ripgrep could not parse it. Enable Literal strings for exact text, or use a glob option in Files to filter file names.",
+        )
+    } else if stderr.contains("PCRE2 is not available") {
+        Some(
+            "This ripgrep executable was built without PCRE2 support. Use the default regex engine or install a PCRE2-enabled ripgrep build.",
+        )
+    } else {
+        Some(
+            "ripgrep could not complete this request. Check the messages below and verify that the installed ripgrep version supports the selected options.",
+        )
+    }
 }
 
 fn about_window(app: &mut RgStudio, context: &egui::Context, palette: Palette) {
@@ -932,7 +1228,7 @@ mod tests {
 
     use crate::{app::RgStudio, theme};
 
-    use super::render;
+    use super::{diagnostic_explanation, highlighted_job, output_line_count_label, render};
 
     fn rendered_bottom(size: eframe::egui::Vec2, preview_open: bool) -> f32 {
         let context = Context::default();
@@ -974,5 +1270,44 @@ mod tests {
     fn command_fits_the_minimum_viewport_with_preview_open() {
         let bottom = rendered_bottom(vec2(700.0, 440.0), true);
         assert!(bottom <= 440.0, "rendered content ends at y={bottom}");
+    }
+
+    #[test]
+    fn output_line_count_excludes_the_trailing_newline() {
+        assert_eq!(output_line_count_label("one\n"), "1 line");
+        assert_eq!(output_line_count_label("one\ntwo\n"), "2 lines");
+        assert_eq!(output_line_count_label(""), "0 lines");
+    }
+
+    #[test]
+    fn highlighted_preview_preserves_spaces_around_matches() {
+        let text = "  before  match  after  \nnext ";
+        let start = text.find("match").unwrap();
+        let job = highlighted_job(
+            text,
+            &[start..start + "match".len()],
+            theme::Palette::new(true),
+        );
+
+        assert_eq!(job.text, text);
+        assert!(job.keep_trailing_whitespace);
+    }
+
+    #[test]
+    fn explains_regex_quantifier_errors_as_pattern_or_file_glob_issues() {
+        let explanation = diagnostic_explanation(
+            "rg: regex parse error:\n    (?:*.)\n       ^\nerror: repetition operator missing expression",
+        )
+        .unwrap();
+
+        assert!(explanation.contains("`.*`"));
+        assert!(explanation.contains("`*.rs`"));
+    }
+
+    #[test]
+    fn explains_generic_regex_parse_errors() {
+        let explanation = diagnostic_explanation("regex parse error: invalid group").unwrap();
+        assert!(explanation.contains("regular expression"));
+        assert!(explanation.contains("Literal strings"));
     }
 }

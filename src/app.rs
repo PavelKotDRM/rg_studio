@@ -79,10 +79,9 @@ impl RgStudio {
                 }
                 match spec.kind {
                     crate::options::OptionKind::Switch => Some(spec.flag.to_owned()),
-                    crate::options::OptionKind::Value(_) if !state.value.is_empty() => {
+                    crate::options::OptionKind::Value(_) => {
                         Some(format!("{}={}", spec.flag, state.value))
                     }
-                    crate::options::OptionKind::Value(_) => None,
                 }
             })
             .collect::<Vec<_>>();
@@ -150,7 +149,10 @@ impl eframe::App for RgStudio {
 #[cfg(test)]
 mod tests {
     use super::RgStudio;
-    use crate::{options::OPTIONS, preview::PreviewResult};
+    use crate::{
+        options::{OPTIONS, OptionKind},
+        preview::PreviewResult,
+    };
 
     fn enable_option(app: &mut RgStudio, flag: &str, value: Option<&str>) {
         let index = OPTIONS
@@ -201,6 +203,31 @@ mod tests {
         app.enforce_exclusive_option("--hidden");
 
         assert!(is_enabled(&app, "--hidden"));
+    }
+
+    #[test]
+    fn selected_value_options_are_kept_even_when_the_value_is_empty() {
+        let mut app = RgStudio::default();
+        let value_options = OPTIONS
+            .iter()
+            .filter(|spec| matches!(spec.kind, OptionKind::Value(_)))
+            .collect::<Vec<_>>();
+        for (spec, state) in OPTIONS.iter().zip(&mut app.option_states) {
+            if matches!(spec.kind, OptionKind::Value(_)) {
+                state.enabled = true;
+            }
+        }
+
+        app.rebuild_options();
+
+        assert_eq!(app.command.options.len(), value_options.len());
+        for spec in value_options {
+            assert!(
+                app.command.options.contains(&format!("{}=", spec.flag)),
+                "selected option {} was omitted",
+                spec.flag
+            );
+        }
     }
 
     #[test]

@@ -26,8 +26,11 @@ parent directory, and finally in `PATH`.
 
 ### Pattern and path
 
-- Enter a ripgrep regular expression in **Search pattern**. You can also enter
-  a literal string and enable **Literal strings** in the **Search** category.
+- **Search pattern** is a regular expression for file contents, not a filename
+  glob. For example, `*.` is invalid because `*` must repeat a preceding
+  expression; use `.*` to match any characters in a line. To filter file names,
+  enable **Include/exclude glob** in **Files** and enter a glob such as `*.rs`.
+  For exact text, enable **Literal strings** in **Search**.
 - Enter a directory or file in **Search in**. If the field is empty, ripgrep
   searches its current working directory; `.` explicitly selects that directory.
 - The generated command puts the path after `--`, so a path beginning with `-`
@@ -37,7 +40,8 @@ parent directory, and finally in `PATH`.
 
 The option catalog is split into **Search**, **Files**, **Output**, and
 **Modes & diagnostics**. Enable a checkbox to add that option to the generated
-command. For options that take a value, enable the option and fill in its field.
+command. Value fields show the expected kind of value; glob fields accept file
+patterns, while the search pattern field accepts a regular expression.
 
 Use **Filter options** to find options by either their displayed name or flag.
 The filter only changes which cards are shown; it does not change selected
@@ -45,7 +49,8 @@ options.
 
 Expand **Advanced arguments** to enter repeatable options or flags that are not
 in the catalog. Arguments are split into command-line tokens, with quoted
-values kept together. Unmatched quotes are reported when you run the search.
+values kept together. Unmatched quotes are shown as an error and prevent the
+command from running.
 The app does not invoke a shell for **Run ripgrep**, so shell operators such as
 `|` are not executed as shell syntax. Options such as ripgrep's `--pre` still
 have their normal ripgrep behavior; only use trusted values for those options.
@@ -85,11 +90,17 @@ settings can still be used for the actual CLI search if supported by your
 ripgrep build.
 
 For a filesystem search, review **Generated command** and click **Run ripgrep**.
-The CLI runs in the background. The results window shows the executable used,
-the exit status, stdout, and stderr. Large output is split into pages; use
-**Previous** and **Next** to navigate it. The full output remains available, and
-text on the current page can be selected. Exit code `1` means no matches were
-found; it is a normal ripgrep result, not an app error.
+The CLI runs in the background. The results window explains whether the search
+completed, found no matches, or reported an error; it also shows the exit code,
+elapsed time, executable, and the command used. Results (`stdout`) and messages
+(`stderr`, such as warnings and errors) are on separate tabs, each with a line
+count. For standard text results, cards show the source file, an optional line
+number, and a highlighted excerpt. Long lines are shortened; expand **Raw
+ripgrep output** to inspect the complete, paginated output. Generated `.d`
+dependency files can contain many paths on a single line. Output modes that
+change ripgrep's format are shown as-is. On failure, a plain-language
+explanation is shown and the messages tab opens automatically. Exit code `1`
+means no matches were found; it is a normal ripgrep result, not an app error.
 
 Click **Copy command** to copy the displayed command for use in a terminal.
 The command display applies OS-appropriate quoting to the pattern, path, and
@@ -104,8 +115,11 @@ selected option values.
   **Modes & diagnostics**.
 - **No matches (exit code 1):** check the pattern, path, and enabled filters.
   An exit code of `1` simply means the search completed without a match.
-- **Invalid regex:** correct the expression shown in the preview or regex builder.
-  PCRE2-specific syntax is not accepted by the default Rust regex validator.
+- **Invalid regex:** **Search pattern** is a regular expression, not a filename
+  glob. `*.` is invalid because `*` must follow an expression; use `.*` to
+  match any characters in a line. To filter file names, use **Files** >
+  **Include/exclude glob**, for example `*.rs`. PCRE2-specific syntax is not
+  accepted by the default Rust regex validator.
 - **An option is rejected by ripgrep:** make sure the installed CLI version
   supports it. The catalog targets ripgrep 15.2.0; use **Advanced arguments**
   for options not listed in the catalog.
