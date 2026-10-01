@@ -109,11 +109,11 @@ fn execute(state: &CommandState) -> Result<SearchOutput, String> {
     process.creation_flags(CREATE_NO_WINDOW);
 
     let output = process.output().map_err(|error| {
-            format!(
-                "Unable to start ripgrep ({:?}): {error}. Build the bundled CLI or install `rg` in PATH.",
-            executable
-            )
-        })?;
+        format!(
+            "Unable to start ripgrep ({}): {error}. Build the bundled CLI or install `rg` in PATH.",
+            executable.display()
+        )
+    })?;
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
 

@@ -261,6 +261,7 @@ fn render_option_catalog(app: &mut RgStudio, ui: &mut egui::Ui, palette: Palette
             let card_width = (ui.available_width() - 12.0 * (columns - 1) as f32) / columns as f32;
             let mut current_column = 0;
             let mut changed = false;
+            let mut newly_enabled_flag = None;
 
             egui::Grid::new("option_grid")
                 .num_columns(columns)
@@ -296,6 +297,9 @@ fn render_option_catalog(app: &mut RgStudio, ui: &mut egui::Ui, palette: Palette
                                                 let response =
                                                     ui.checkbox(&mut state.enabled, spec.label);
                                                 changed |= response.changed();
+                                                if response.changed() && state.enabled {
+                                                    newly_enabled_flag = Some(spec.flag);
+                                                }
                                                 ui.label(
                                                     RichText::new(spec.flag)
                                                         .small()
@@ -310,6 +314,9 @@ fn render_option_catalog(app: &mut RgStudio, ui: &mut egui::Ui, palette: Palette
                                                     let response =
                                                         ui.checkbox(&mut state.enabled, spec.label);
                                                     changed |= response.changed();
+                                                    if response.changed() && state.enabled {
+                                                        newly_enabled_flag = Some(spec.flag);
+                                                    }
                                                     let input_width =
                                                         (ui.available_width() - 8.0).max(90.0);
                                                     let input_response =
@@ -351,6 +358,9 @@ fn render_option_catalog(app: &mut RgStudio, ui: &mut egui::Ui, palette: Palette
                     }
                 });
 
+            if let Some(flag) = newly_enabled_flag {
+                app.enforce_exclusive_option(flag);
+            }
             if changed {
                 app.copied = false;
             }
@@ -846,6 +856,10 @@ fn regex_builder_window(app: &mut RgStudio, context: &egui::Context, palette: Pa
                                                 egui::DragValue::new(&mut part.minimum)
                                                     .range(0..=9999),
                                             );
+                                            // Keep the upper bound valid even if the lower
+                                            // bound was just raised above it, otherwise the
+                                            // generated pattern (e.g. `{5,3}`) fails to compile.
+                                            part.maximum = part.maximum.max(part.minimum);
                                             ui.label("to");
                                             ui.add(
                                                 egui::DragValue::new(&mut part.maximum)

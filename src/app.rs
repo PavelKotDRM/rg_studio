@@ -48,6 +48,27 @@ impl Default for RgStudio {
 }
 
 impl RgStudio {
+    /// Disables any option that contradicts the newly enabled `flag`.
+    ///
+    /// ripgrep applies the last matching flag on the command line, so leaving
+    /// both sides of a conflicting pair enabled (e.g. `--line-number` and
+    /// `--no-line-number`) silently produces a command whose behaviour does
+    /// not match what both checkboxes suggest. Call this right after a
+    /// checkbox is switched on.
+    pub(crate) fn enforce_exclusive_option(&mut self, flag: &'static str) {
+        for conflicting_flag in crate::options::conflicting_flags(flag) {
+            if *conflicting_flag == flag {
+                continue;
+            }
+            if let Some(index) = OPTIONS
+                .iter()
+                .position(|spec| spec.flag == *conflicting_flag)
+            {
+                self.option_states[index].enabled = false;
+            }
+        }
+    }
+
     pub(crate) fn rebuild_options(&mut self) {
         let options = OPTIONS
             .iter()
@@ -140,6 +161,46 @@ mod tests {
         if let Some(value) = value {
             app.option_states[index].value = value.to_owned();
         }
+    }
+
+    fn is_enabled(app: &RgStudio, flag: &str) -> bool {
+        let index = OPTIONS
+            .iter()
+            .position(|spec| spec.flag == flag)
+            .expect("option flag should exist");
+        app.option_states[index].enabled
+    }
+
+    #[test]
+    fn enabling_a_case_mode_disables_the_other_case_modes() {
+        let mut app = RgStudio::default();
+        enable_option(&mut app, "--case-sensitive", None);
+        enable_option(&mut app, "--smart-case", None);
+        app.enforce_exclusive_option("--smart-case");
+
+        assert!(!is_enabled(&app, "--case-sensitive"));
+        assert!(is_enabled(&app, "--smart-case"));
+        assert!(!is_enabled(&app, "--ignore-case"));
+    }
+
+    #[test]
+    fn enabling_no_line_number_disables_line_number() {
+        let mut app = RgStudio::default();
+        enable_option(&mut app, "--line-number", None);
+        enable_option(&mut app, "--no-line-number", None);
+        app.enforce_exclusive_option("--no-line-number");
+
+        assert!(!is_enabled(&app, "--line-number"));
+        assert!(is_enabled(&app, "--no-line-number"));
+    }
+
+    #[test]
+    fn unrelated_options_are_unaffected_by_conflict_enforcement() {
+        let mut app = RgStudio::default();
+        enable_option(&mut app, "--hidden", None);
+        app.enforce_exclusive_option("--hidden");
+
+        assert!(is_enabled(&app, "--hidden"));
     }
 
     #[test]

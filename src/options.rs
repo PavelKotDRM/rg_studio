@@ -371,16 +371,60 @@ pub(crate) const OPTIONS: &[OptionSpec] = &[
     switch(Category::Modes, "--help", "Print ripgrep help"),
 ];
 
+/// Groups of flags that contradict each other when passed to ripgrep together.
+///
+/// Enabling one flag in a group should disable the others so the generated
+/// command never contains two options that override one another silently.
+pub(crate) const MUTUALLY_EXCLUSIVE: &[&[&str]] = &[
+    &["--case-sensitive", "--ignore-case", "--smart-case"],
+    &["--line-number", "--no-line-number"],
+    &["--with-filename", "--no-filename"],
+    &["--sort", "--sortr"],
+];
+
+/// Returns the other flags that conflict with `flag`, if any.
+pub(crate) fn conflicting_flags(flag: &str) -> &'static [&'static str] {
+    MUTUALLY_EXCLUSIVE
+        .iter()
+        .find(|group| group.contains(&flag))
+        .copied()
+        .unwrap_or(&[])
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
 
-    use super::OPTIONS;
+    use super::{MUTUALLY_EXCLUSIVE, OPTIONS, conflicting_flags};
 
     #[test]
     fn option_flags_are_unique_and_comprehensive() {
         let flags: HashSet<_> = OPTIONS.iter().map(|option| option.flag).collect();
         assert_eq!(flags.len(), OPTIONS.len());
         assert!(OPTIONS.len() >= 95);
+    }
+
+    #[test]
+    fn mutually_exclusive_groups_only_reference_known_flags() {
+        let flags: HashSet<_> = OPTIONS.iter().map(|option| option.flag).collect();
+        for group in MUTUALLY_EXCLUSIVE {
+            assert!(group.len() >= 2, "a conflict group needs at least 2 flags");
+            for flag in *group {
+                assert!(
+                    flags.contains(flag),
+                    "unknown flag in conflict group: {flag}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn conflicting_flags_are_reported_both_ways() {
+        assert_eq!(
+            conflicting_flags("--ignore-case"),
+            &["--case-sensitive", "--ignore-case", "--smart-case"]
+        );
+        assert_eq!(conflicting_flags("--sort"), &["--sort", "--sortr"]);
+        assert!(conflicting_flags("--hidden").is_empty());
     }
 }
