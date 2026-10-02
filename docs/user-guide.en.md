@@ -105,8 +105,8 @@ reversible `\xNN` escapes with literal backslashes doubled. Exit code `1` means
 no matches were found; it is a normal ripgrep result, not an app error.
 
 Click **Copy command** to copy the displayed command for use in a terminal.
-The command display applies OS-appropriate quoting to the pattern, path, and
-selected option values.
+The command display uses PowerShell quoting on Windows and POSIX shell quoting
+on Unix for the pattern, path, and selected option values.
 
 ## Troubleshooting
 
