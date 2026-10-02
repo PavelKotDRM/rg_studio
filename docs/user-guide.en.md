@@ -92,15 +92,17 @@ ripgrep build.
 For a filesystem search, review **Generated command** and click **Run ripgrep**.
 The CLI runs in the background. The results window explains whether the search
 completed, found no matches, or reported an error; it also shows the exit code,
-elapsed time, executable, and the command used. Results (`stdout`) and messages
-(`stderr`, such as warnings and errors) are on separate tabs, each with a line
-count. For standard text results, cards show the source file, an optional line
-number, and a highlighted excerpt. Long lines are shortened; expand **Raw
-ripgrep output** to inspect the complete, paginated output. Generated `.d`
-dependency files can contain many paths on a single line. Output modes that
-change ripgrep's format are shown as-is. On failure, a plain-language
-explanation is shown and the messages tab opens automatically. Exit code `1`
-means no matches were found; it is a normal ripgrep result, not an app error.
+elapsed time, executable, and the command used. The default **CLI output** view
+shows the complete captured `stdout` and `stderr` in separate stream selectors.
+Long lines wrap to the window width. Use Previous/Next page to browse large
+output; Copy copies the displayed page.
+The selected ripgrep options are passed unchanged. Output-changing modes such
+as JSON, counts, context, and file lists keep ripgrep's original format.
+Recognizable match text is highlighted where present. ANSI colors are rendered
+without changing copied output; with `--color=auto`, match text is highlighted
+even when redirected `stdout` contains no ANSI codes. Non-UTF-8 bytes use
+reversible `\xNN` escapes with literal backslashes doubled. Exit code `1` means
+no matches were found; it is a normal ripgrep result, not an app error.
 
 Click **Copy command** to copy the displayed command for use in a terminal.
 The command display applies OS-appropriate quoting to the pattern, path, and

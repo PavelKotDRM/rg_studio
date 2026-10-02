@@ -1,5 +1,7 @@
 use std::ffi::OsString;
 
+use crate::options::{Category, OPTIONS};
+
 /// Mutable state used to compose a ripgrep command.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct CommandState {
@@ -92,6 +94,202 @@ impl CommandState {
 
         Ok(arguments)
     }
+
+    #[cfg(test)]
+    pub(crate) fn supports_readable_results(&self) -> bool {
+        if self.pattern.is_empty() || !self.extra_arguments.trim().is_empty() {
+            return false;
+        }
+        if !self.options.iter().any(|option| {
+            option
+                .split_once('=')
+                .map_or(option.as_str(), |(flag, _)| flag)
+                == "--with-filename"
+        }) && !self.path.is_empty()
+            && std::path::Path::new(&self.path).is_file()
+        {
+            return false;
+        }
+        self.options.iter().all(|option| {
+            let flag = option
+                .split_once('=')
+                .map_or(option.as_str(), |(flag, _)| flag);
+            if matches!(
+                flag,
+                "--after-context"
+                    | "--auto-hybrid-regex"
+                    | "--before-context"
+                    | "--colors"
+                    | "--context"
+                    | "--context-separator"
+                    | "--count"
+                    | "--count-matches"
+                    | "--debug"
+                    | "--engine"
+                    | "--field-context-separator"
+                    | "--field-match-separator"
+                    | "--file"
+                    | "--files"
+                    | "--files-with-matches"
+                    | "--files-without-match"
+                    | "--generate"
+                    | "--heading"
+                    | "--help"
+                    | "--hyperlink-format"
+                    | "--include-zero"
+                    | "--invert-match"
+                    | "--json"
+                    | "--max-columns"
+                    | "--max-columns-preview"
+                    | "--multiline"
+                    | "--multiline-dotall"
+                    | "--hostname-bin"
+                    | "--no-filename"
+                    | "--no-pcre2-unicode"
+                    | "--no-unicode"
+                    | "--null"
+                    | "--null-data"
+                    | "--only-matching"
+                    | "--passthru"
+                    | "--path-separator"
+                    | "--pcre2"
+                    | "--pcre2-version"
+                    | "--pretty"
+                    | "--quiet"
+                    | "--regexp"
+                    | "--replace"
+                    | "--stats"
+                    | "--trace"
+                    | "--type-list"
+                    | "--trim"
+                    | "--version"
+                    | "--vimgrep"
+            ) {
+                return false;
+            }
+
+            let Some(spec) = OPTIONS.iter().find(|spec| spec.flag == flag) else {
+                return false;
+            };
+            match spec.category {
+                Category::Output => {
+                    matches!(
+                        flag,
+                        "--block-buffered"
+                            | "--byte-offset"
+                            | "--column"
+                            | "--line-buffered"
+                            | "--line-number"
+                            | "--no-line-number"
+                            | "--sort"
+                            | "--sort-files"
+                            | "--sortr"
+                            | "--with-filename"
+                    ) || (flag == "--color"
+                        && option
+                            .split_once('=')
+                            .is_some_and(|(_, mode)| matches!(mode, "auto" | "never")))
+                }
+                Category::Modes => {
+                    matches!(
+                        flag,
+                        "--no-config" | "--no-ignore-messages" | "--no-messages"
+                    )
+                }
+                Category::Search => matches!(
+                    flag,
+                    "--binary"
+                        | "--case-sensitive"
+                        | "--crlf"
+                        | "--dfa-size-limit"
+                        | "--fixed-strings"
+                        | "--ignore-case"
+                        | "--line-regexp"
+                        | "--max-count"
+                        | "--mmap"
+                        | "--null-data"
+                        | "--pre"
+                        | "--pre-glob"
+                        | "--regex-size-limit"
+                        | "--search-zip"
+                        | "--smart-case"
+                        | "--stop-on-nonmatch"
+                        | "--text"
+                        | "--threads"
+                        | "--word-regexp"
+                ),
+                Category::Files => true,
+            }
+        })
+    }
+
+    pub(crate) fn uses_external_ripgrep_config(&self) -> bool {
+        std::env::var_os("RIPGREP_CONFIG_PATH").is_some()
+            && !self.options.iter().any(|option| {
+                option
+                    .split_once('=')
+                    .map_or(option.as_str(), |(flag, _)| flag)
+                    == "--no-config"
+            })
+    }
+
+    pub(crate) fn supports_raw_match_highlighting(&self) -> bool {
+        if self.pattern.is_empty()
+            || !self.extra_arguments.trim().is_empty()
+            || self.uses_external_ripgrep_config()
+        {
+            return false;
+        }
+
+        self.options.iter().all(|option| {
+            let flag = option
+                .split_once('=')
+                .map_or(option.as_str(), |(flag, _)| flag);
+            let Some(spec) = OPTIONS.iter().find(|spec| spec.flag == flag) else {
+                return false;
+            };
+            match spec.category {
+                Category::Output => {
+                    !matches!(flag, "--include-zero" | "--quiet" | "--replace")
+                        && (flag != "--color"
+                            || option.split_once('=').is_some_and(|(_, mode)| {
+                                matches!(mode, "auto" | "always" | "ansi")
+                            }))
+                }
+                Category::Modes => matches!(
+                    flag,
+                    "--debug"
+                        | "--json"
+                        | "--no-config"
+                        | "--no-ignore-messages"
+                        | "--no-messages"
+                        | "--trace"
+                ),
+                Category::Search => matches!(
+                    flag,
+                    "--case-sensitive"
+                        | "--crlf"
+                        | "--dfa-size-limit"
+                        | "--fixed-strings"
+                        | "--ignore-case"
+                        | "--line-regexp"
+                        | "--max-count"
+                        | "--mmap"
+                        | "--null-data"
+                        | "--pre"
+                        | "--pre-glob"
+                        | "--regex-size-limit"
+                        | "--search-zip"
+                        | "--smart-case"
+                        | "--stop-on-nonmatch"
+                        | "--text"
+                        | "--threads"
+                        | "--word-regexp"
+                ),
+                Category::Files => true,
+            }
+        })
+    }
 }
 
 #[cfg(windows)]
@@ -123,6 +321,8 @@ fn quote(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use std::ffi::OsString;
+
+    use crate::options::Category;
 
     use super::CommandState;
 
@@ -191,6 +391,316 @@ mod tests {
         let command = state.command().unwrap();
         assert!(command.contains("--glob=*.rs"));
         assert!(command.contains("--regexp main --"));
+    }
+
+    #[test]
+    fn command_contains_only_explicit_output_options() {
+        let state = CommandState {
+            pattern: "needle".into(),
+            path: "source.txt".into(),
+            ..CommandState::default()
+        };
+
+        assert_eq!(
+            state.arguments().unwrap(),
+            ["--regexp", "needle", "--", "source.txt"].map(OsString::from)
+        );
+        assert!(state.supports_readable_results());
+    }
+
+    #[test]
+    fn coordinate_fields_are_added_only_when_the_options_are_selected() {
+        let state = CommandState {
+            pattern: "needle".into(),
+            path: "source.txt".into(),
+            options: vec![
+                "--line-number".into(),
+                "--with-filename".into(),
+                "--column".into(),
+                "--byte-offset".into(),
+            ],
+            ..CommandState::default()
+        };
+
+        assert_eq!(
+            state.arguments().unwrap(),
+            [
+                "--line-number",
+                "--with-filename",
+                "--column",
+                "--byte-offset",
+                "--regexp",
+                "needle",
+                "--",
+                "source.txt"
+            ]
+            .map(OsString::from)
+        );
+    }
+
+    #[test]
+    fn context_output_does_not_add_unselected_coordinate_flags() {
+        let state = CommandState {
+            pattern: "needle".into(),
+            path: "source.txt".into(),
+            options: vec!["--after-context=1".into()],
+            ..CommandState::default()
+        };
+
+        assert_eq!(
+            state.arguments().unwrap(),
+            [
+                "--after-context=1",
+                "--regexp",
+                "needle",
+                "--",
+                "source.txt"
+            ]
+            .map(OsString::from)
+        );
+        assert!(!state.supports_readable_results());
+    }
+
+    #[test]
+    fn heading_vimgrep_and_pretty_modes_do_not_add_unselected_flags() {
+        for option in ["--heading", "--vimgrep", "--pretty"] {
+            let state = CommandState {
+                pattern: "needle".into(),
+                path: "source.txt".into(),
+                options: vec![option.into()],
+                ..CommandState::default()
+            };
+            let arguments = state.arguments().unwrap();
+
+            assert_eq!(
+                arguments,
+                [option, "--regexp", "needle", "--", "source.txt"].map(OsString::from)
+            );
+            assert!(!state.supports_readable_results());
+        }
+    }
+
+    #[test]
+    fn preserves_explicit_no_line_number_setting() {
+        let state = CommandState {
+            pattern: "needle".into(),
+            options: vec!["--no-line-number".into()],
+            ..CommandState::default()
+        };
+
+        assert_eq!(
+            state.arguments().unwrap(),
+            ["--no-line-number", "--regexp", "needle"].map(OsString::from)
+        );
+        assert!(state.supports_readable_results());
+    }
+
+    #[test]
+    fn supports_terminal_auto_and_never_color_modes_but_not_ansi_modes() {
+        for mode in ["auto", "never"] {
+            let state = CommandState {
+                pattern: "needle".into(),
+                options: vec![format!("--color={mode}")],
+                ..CommandState::default()
+            };
+            assert!(state.supports_readable_results(), "mode: {mode}");
+        }
+
+        for mode in ["always", "ansi"] {
+            let state = CommandState {
+                pattern: "needle".into(),
+                options: vec![format!("--color={mode}")],
+                ..CommandState::default()
+            };
+            assert!(!state.supports_readable_results(), "mode: {mode}");
+        }
+    }
+
+    #[test]
+    fn ansi_color_output_does_not_add_unselected_coordinates() {
+        for mode in ["always", "ansi"] {
+            let state = CommandState {
+                pattern: "needle".into(),
+                options: vec![format!("--color={mode}")],
+                ..CommandState::default()
+            };
+
+            assert_eq!(
+                state.arguments().unwrap(),
+                [
+                    format!("--color={mode}"),
+                    "--regexp".into(),
+                    "needle".into()
+                ]
+                .map(OsString::from)
+            );
+            assert!(!state.supports_readable_results());
+        }
+    }
+
+    #[test]
+    fn raw_highlighting_covers_text_formats_but_skips_count_and_file_list_modes() {
+        for option in [
+            "--after-context=2",
+            "--byte-offset",
+            "--color=auto",
+            "--color=always",
+            "--column",
+            "--context=3",
+            "--heading",
+            "--json",
+            "--null",
+            "--null-data",
+            "--only-matching",
+            "--vimgrep",
+        ] {
+            let state = CommandState {
+                pattern: "needle".into(),
+                options: vec![option.into()],
+                ..CommandState::default()
+            };
+            assert!(
+                state.supports_raw_match_highlighting(),
+                "raw output should retain match highlighting for {option}"
+            );
+        }
+
+        for option in [
+            "--count",
+            "--files",
+            "--files-with-matches",
+            "--files-without-match",
+            "--invert-match",
+            "--no-unicode",
+            "--pcre2",
+            "--quiet",
+        ] {
+            let state = CommandState {
+                pattern: "needle".into(),
+                options: vec![option.into()],
+                ..CommandState::default()
+            };
+            assert!(
+                !state.supports_raw_match_highlighting(),
+                "raw output should not guess match spans for {option}"
+            );
+        }
+    }
+
+    #[test]
+    fn raw_highlighting_classifies_every_catalogued_option() {
+        for spec in crate::options::OPTIONS {
+            let state = CommandState {
+                pattern: "needle".into(),
+                options: vec![spec.flag.to_owned()],
+                ..CommandState::default()
+            };
+            let expected = match spec.category {
+                Category::Output => !matches!(
+                    spec.flag,
+                    "--color" | "--include-zero" | "--quiet" | "--replace"
+                ),
+                Category::Modes => matches!(
+                    spec.flag,
+                    "--debug"
+                        | "--json"
+                        | "--no-config"
+                        | "--no-ignore-messages"
+                        | "--no-messages"
+                        | "--trace"
+                ),
+                Category::Search => matches!(
+                    spec.flag,
+                    "--case-sensitive"
+                        | "--crlf"
+                        | "--dfa-size-limit"
+                        | "--fixed-strings"
+                        | "--ignore-case"
+                        | "--line-regexp"
+                        | "--max-count"
+                        | "--mmap"
+                        | "--null-data"
+                        | "--pre"
+                        | "--pre-glob"
+                        | "--regex-size-limit"
+                        | "--search-zip"
+                        | "--smart-case"
+                        | "--stop-on-nonmatch"
+                        | "--text"
+                        | "--threads"
+                        | "--word-regexp"
+                ),
+                Category::Files => true,
+            };
+
+            assert_eq!(
+                state.supports_raw_match_highlighting(),
+                expected,
+                "unexpected raw highlighting handling for {}",
+                spec.flag
+            );
+        }
+    }
+
+    #[test]
+    fn classifies_all_catalogued_options() {
+        for spec in crate::options::OPTIONS {
+            let state = CommandState {
+                pattern: "needle".into(),
+                options: vec![spec.flag.to_owned()],
+                ..CommandState::default()
+            };
+            let expected = match spec.category {
+                Category::Output => matches!(
+                    spec.flag,
+                    "--block-buffered"
+                        | "--byte-offset"
+                        | "--column"
+                        | "--line-buffered"
+                        | "--line-number"
+                        | "--no-line-number"
+                        | "--sort"
+                        | "--sort-files"
+                        | "--sortr"
+                        | "--with-filename"
+                ),
+                Category::Modes => {
+                    matches!(
+                        spec.flag,
+                        "--no-config" | "--no-ignore-messages" | "--no-messages"
+                    )
+                }
+                Category::Search => matches!(
+                    spec.flag,
+                    "--binary"
+                        | "--case-sensitive"
+                        | "--crlf"
+                        | "--dfa-size-limit"
+                        | "--fixed-strings"
+                        | "--ignore-case"
+                        | "--line-regexp"
+                        | "--max-count"
+                        | "--mmap"
+                        | "--pre"
+                        | "--pre-glob"
+                        | "--regex-size-limit"
+                        | "--search-zip"
+                        | "--smart-case"
+                        | "--stop-on-nonmatch"
+                        | "--text"
+                        | "--threads"
+                        | "--word-regexp"
+                ),
+                Category::Files => true,
+            };
+
+            assert_eq!(
+                state.supports_readable_results(),
+                expected,
+                "unexpected handling for {}",
+                spec.flag
+            );
+        }
     }
 
     #[test]
