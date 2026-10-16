@@ -7,8 +7,8 @@ description = "A visual command composer and runner for ripgrep"
 license = "MIT"
 
 [dependencies]
-eframe = { version = "0.36", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
-egui = "0.36"
+eframe = { version = "0.37", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+egui = "0.37"
 regex = "1"
 shlex = "2"
 

@@ -627,7 +627,7 @@ mod tests {
                     &pages,
                     &mut page,
                     palette.text,
-                    eframe::egui::Id::new("long_cli_output"),
+                    eframe::egui::Id::unique("long_cli_output"),
                     &[],
                 );
                 right = ui.min_rect().right();
