@@ -103,11 +103,18 @@ fn context_output_uses_only_selected_coordinate_options() {
     let matching_line = result
         .stdout
         .lines()
-        .find(|line| line.ends_with("fn main() -> eframe::Result {"))
+        .find(|line| line.ends_with("fn main() -> std::process::ExitCode {"))
         .expect("context output should contain a matching line");
 
     assert!(result.success, "ripgrep failed: {}", result.stderr);
-    assert_eq!(matching_line, r"src\main.rs:fn main() -> eframe::Result {");
+    let expected_path = std::path::Path::new("src").join("main.rs");
+    assert_eq!(
+        matching_line,
+        format!(
+            "{}:fn main() -> std::process::ExitCode {{",
+            expected_path.display()
+        )
+    );
     for option in [
         "--line-number",
         "--with-filename",
@@ -143,7 +150,7 @@ fn context_output_contains_selected_line_column_and_byte_offset_fields() {
     let matching_line = result
         .stdout
         .lines()
-        .find(|line| line.ends_with("fn main() -> eframe::Result {"))
+        .find(|line| line.ends_with("fn main() -> std::process::ExitCode {"))
         .expect("context output should contain a matching line");
     let path_separator = super::result_path_separator(matching_line, "src").unwrap();
     let fields = matching_line[path_separator + 1..]
@@ -155,7 +162,7 @@ fn context_output_contains_selected_line_column_and_byte_offset_fields() {
     assert!(fields[0].parse::<usize>().is_ok());
     assert!(fields[1].parse::<usize>().is_ok());
     assert!(fields[2].parse::<usize>().is_ok());
-    assert_eq!(fields[3], "fn main() -> eframe::Result {");
+    assert_eq!(fields[3], "fn main() -> std::process::ExitCode {");
 }
 
 #[test]

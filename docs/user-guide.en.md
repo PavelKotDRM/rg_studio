@@ -22,6 +22,41 @@ option catalog is based on that release. When you click **Run ripgrep**, the
 app looks for `rg.exe` or `rg` next to its executable, then in the executable's
 parent directory, and finally in `PATH`.
 
+## Command-line interface
+
+Running `rg-studio` without arguments opens the GUI. Available commands:
+
+| Command | Purpose |
+| --- | --- |
+| `gui [PATTERN] [PATH] [-- RG_ARGS...]` | Open the GUI with prefilled fields; do not start a search |
+| `search [PATTERN] [PATH] [-- RG_ARGS...]` | Run ripgrep directly in the terminal |
+| `command [PATTERN] [PATH] [-- RG_ARGS...]` | Print the shell-quoted command without running it |
+| `--help`, `--version` | Show help or the application version |
+
+```powershell
+rg-studio gui 'TODO|FIXME' src -- --ignore-case
+rg-studio search TODO src -- --line-number --glob=*.rs
+rg-studio command TODO '~' -- --hidden
+rg-studio search -- --files src
+rg-studio search -- -e '-pattern'
+```
+
+Run from source with `cargo run -- search TODO src`, or use the built executable.
+Use `<command> --help` for command-specific help. Parameters after `--` belong
+to ripgrep; preserve arguments containing spaces with your shell's quoting.
+In GUI mode these parameters appear in **Advanced arguments**, opened
+automatically when nonempty, rather than as checked catalog options.
+
+`search` streams stdout and stderr directly and accepts piped stdin. With no
+path, ripgrep searches the working directory unless stdin is piped. Exit codes
+are 0 for matches, 1 for no matches, and 2 for errors; CLI validation errors
+are also reported on stderr with code 2. No search history or output dialog
+is created in CLI mode. The path supports the same shortcuts as **Search in**;
+quote `~` or variable references if you want the app to expand them.
+Shell commands and operators are not evaluated by the app.
+On Windows, GUI mode detaches from the console, while CLI modes retain console
+and redirected streams.
+
 ## Configure a search
 
 ### Pattern and path
@@ -33,6 +68,15 @@ parent directory, and finally in `PATH`.
   For exact text, enable **Literal strings** in **Search**.
 - Enter a directory or file in **Search in**. If the field is empty, ripgrep
   searches its current working directory; `.` explicitly selects that directory.
+- **Search in** expands `~`, `~/folder`, and `~\folder` to your home directory.
+  Environment variables support `%NAME%`, `$NAME`, `${NAME}`, and `$env:NAME`
+  syntax (for example `%USERPROFILE%` on Windows or `$HOME` on Linux).
+  Variables come from the application's environment; missing variables and paths
+  that expand to an empty string are reported as errors. Expansion is single-pass,
+  applies only to **Search in**, and is reflected in the generated command.
+  Relative paths such as `.` and `..` keep their usual meaning. Other users'
+  home shortcuts (`~user`), wildcards, and shell expressions such as `$(...)`
+  are not expanded or executed.
 - The generated command puts the path after `--`, so a path beginning with `-`
   is treated as a path rather than another option.
 
@@ -78,7 +122,8 @@ default Rust regex engine. If it is invalid, the error is shown in the builder.
 ## Preview and actual search
 
 The **Live text preview** lets you edit sample text and see matches highlighted
-immediately. Use **Hide** or **Show** to collapse or expand it.
+immediately. It starts collapsed. Use **Show** to expand it or **Hide** to
+collapse it again.
 
 The preview is intentionally not a full ripgrep run: it tests only the main
 pattern against the sample text. It does not search files, read pattern files,

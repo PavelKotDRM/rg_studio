@@ -36,7 +36,7 @@ impl Default for RgStudio {
             filter: String::new(),
             show_about: false,
             show_regex_builder: false,
-            preview_open: true,
+            preview_open: false,
             search: SearchController::default(),
             regex_builder: RegexBuilder::default(),
             dark_theme: true,
@@ -171,6 +171,11 @@ mod tests {
             .position(|spec| spec.flag == flag)
             .expect("option flag should exist");
         app.option_states[index].enabled
+    }
+
+    #[test]
+    fn live_text_preview_is_collapsed_on_startup() {
+        assert!(!RgStudio::default().preview_open);
     }
 
     #[test]

@@ -591,7 +591,7 @@ pub(crate) fn output_page_ranges(output: &str) -> Vec<Range<usize>> {
     pages
 }
 
-fn resolve_executable() -> OsString {
+pub(crate) fn resolve_executable() -> OsString {
     let bundled_name = if cfg!(windows) { "rg.exe" } else { "rg" };
     if let Ok(current_exe) = std::env::current_exe()
         && let Some(parent) = current_exe.parent()

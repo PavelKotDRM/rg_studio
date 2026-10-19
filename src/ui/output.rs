@@ -58,7 +58,7 @@ pub(super) fn render_command(app: &mut RgStudio, ui: &mut egui::Ui, palette: Pal
     let command_error = app.command.arguments().err();
     let mut command_text = command
         .as_deref()
-        .unwrap_or("Cannot build command: fix Advanced arguments.")
+        .unwrap_or("Cannot build command: check Search in and Advanced arguments.")
         .to_owned();
     let mut run_search = false;
     egui::Frame::group(ui.style())
@@ -81,8 +81,8 @@ pub(super) fn render_command(app: &mut RgStudio, ui: &mut egui::Ui, palette: Pal
                     }),
                 );
             });
-            ui.horizontal(|ui| {
-                let input_width = (ui.available_width() - 300.0).max(120.0);
+            ui.horizontal_wrapped(|ui| {
+                let input_width = (ui.available_width() - 328.0).max(120.0);
                 ui.add_sized(
                     egui::vec2(input_width, 36.0),
                     themed_text_edit(egui::TextEdit::singleline(&mut command_text), palette)

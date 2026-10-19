@@ -29,7 +29,7 @@ impl CommandState {
         }
         if !self.path.is_empty() {
             parts.push("--".to_owned());
-            parts.push(quote(&self.path));
+            parts.push(quote(&self.resolved_search_path()?));
         }
         Ok(parts.join(" "))
     }
@@ -88,10 +88,18 @@ impl CommandState {
         }
         if !self.path.is_empty() {
             arguments.push(OsString::from("--"));
-            arguments.push(OsString::from(&self.path));
+            arguments.push(OsString::from(self.resolved_search_path()?));
         }
 
         Ok(arguments)
+    }
+
+    fn resolved_search_path(&self) -> Result<String, String> {
+        expand_search_path(&self.path, std::env::home_dir().as_deref(), |name| {
+            std::env::var(name).map_err(|error| {
+                format!("Search in: cannot read environment variable '{name}': {error}.")
+            })
+        })
     }
 
     #[cfg(test)]
@@ -289,6 +297,76 @@ impl CommandState {
             }
         })
     }
+}
+
+fn expand_search_path(
+    path: &str,
+    home: Option<&std::path::Path>,
+    mut variable: impl FnMut(&str) -> Result<String, String>,
+) -> Result<String, String> {
+    let mut expanded = String::new();
+    let mut remaining = path;
+    if path == "~" || path.starts_with("~/") || path.starts_with("~\\") {
+        let home = home
+            .and_then(std::path::Path::to_str)
+            .filter(|home| !home.is_empty())
+            .ok_or_else(|| {
+                "Search in: cannot determine a Unicode home directory path.".to_owned()
+            })?;
+        expanded.push_str(home);
+        remaining = &path[1..];
+        if !remaining.is_empty() {
+            if !home.ends_with(std::path::is_separator) {
+                expanded.push(std::path::MAIN_SEPARATOR);
+            }
+            remaining = &remaining[1..];
+        }
+    }
+
+    while !remaining.is_empty() {
+        let reference = if let Some(tail) = remaining.strip_prefix("${") {
+            let end = tail.find('}').ok_or_else(|| {
+                "Search in: environment variable reference is missing '}'.".to_owned()
+            })?;
+            Some((&tail[..end], end + 3))
+        } else if let Some(tail) = remaining.strip_prefix('$') {
+            let tail = tail
+                .get(..4)
+                .filter(|prefix| prefix.eq_ignore_ascii_case("env:"))
+                .map_or(tail, |_| &tail[4..]);
+            let length = tail
+                .bytes()
+                .take_while(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+                .count();
+            (length > 0).then_some((&tail[..length], remaining.len() - tail.len() + length))
+        } else if let Some(tail) = remaining.strip_prefix('%') {
+            tail.find('%').map(|end| (&tail[..end], end + 2))
+        } else {
+            None
+        };
+
+        if let Some((name, length)) = reference
+            && !name.is_empty()
+            && name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        {
+            expanded.push_str(&variable(name)?);
+            remaining = &remaining[length..];
+        } else {
+            let character = remaining
+                .chars()
+                .next()
+                .expect("remaining path is not empty");
+            expanded.push(character);
+            remaining = &remaining[character.len_utf8()..];
+        }
+    }
+
+    if !path.is_empty() && expanded.is_empty() {
+        return Err("Search in: the expanded path is empty.".to_owned());
+    }
+    Ok(expanded)
 }
 
 #[cfg(windows)]

@@ -20,6 +20,7 @@ the generated command to the clipboard.
   explains exit status and presents complete `stdout` and `stderr` in separate,
   paginated CLI-output streams with ANSI color rendering and page copying.
 - Light and dark themes, readable typography, and responsive option cards.
+- CLI commands to open a prefilled GUI, search in the terminal, or print a command.
 - An About window with the version, Git SHA, build time, Rust version, and target
   reported by vergen 10.
 
@@ -39,6 +40,7 @@ parsed as command-line arguments rather than shell commands.
 ## Architecture
 
 - `src/app.rs` stores application state and configures the live preview.
+- `src/cli.rs` parses CLI commands and dispatches GUI, terminal search, and command output.
 - `src/ui.rs` renders the interface, dialogs, option catalog, and generated command.
 - `src/theme.rs` defines the shared palette, contrast, and typography.
 - `src/preview.rs` validates regexes and calculates match ranges in sample text.
@@ -57,6 +59,34 @@ app executable.
 rustup update stable
 cargo run --release
 ```
+
+### Command-line interface
+
+Without arguments, `rg-studio` opens the GUI. Use `--help`, `--version`, or
+`<command> --help` for usage.
+
+```powershell
+rg-studio gui 'TODO|FIXME' src -- --ignore-case
+rg-studio search TODO src -- --line-number --glob=*.rs
+rg-studio command TODO '~' -- --hidden
+rg-studio search -- --files src
+```
+
+Syntax: `rg-studio <gui|search|command> [PATTERN] [PATH] [-- RG_ARGS...]`.
+`gui` fills the search fields and places ripgrep arguments in **Advanced arguments**;
+it does not automatically run a search. `search` inherits terminal input/output
+and returns ripgrep's exit code: 0 for matches, 1 for no matches, 2 for errors.
+`command` prints a shell-quoted command without running it. CLI usage errors
+also return 2 and are written to stderr. With no path, ripgrep uses stdin when
+piped, or searches the working directory otherwise.
+
+Paths support the same `~` and environment-variable expansion as **Search in**.
+Quote shortcuts to let the app, rather than your shell, expand them.
+Arguments after `--` are passed as individual ripgrep arguments, without a shell.
+For a pattern starting with `-`, use `search -- -e '-pattern'`.
+When running from source, use `cargo run -- <command> ...`.
+On Windows, CLI modes keep the console and redirected streams; GUI mode
+detaches from the console.
 
 To build a Linux executable from Windows with Docker Desktop, run:
 

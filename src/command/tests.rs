@@ -4,6 +4,148 @@ use crate::options::Category;
 
 use super::CommandState;
 
+#[test]
+fn expands_home_directory_shortcuts_and_both_separators() {
+    let home = std::path::Path::new("home folder");
+    for path in ["~", "~/", "~\\", "~/projects", "~\\projects"] {
+        let expanded = super::expand_search_path(path, Some(home), |_| {
+            panic!("home shortcut must not look up environment variables")
+        })
+        .unwrap();
+        let expected = match path {
+            "~" => "home folder".to_owned(),
+            "~/" | "~\\" => format!("home folder{}", std::path::MAIN_SEPARATOR),
+            _ => format!("home folder{}projects", std::path::MAIN_SEPARATOR),
+        };
+        assert_eq!(expanded, expected, "{path}");
+    }
+    assert!(super::expand_search_path("~", None, |_| unreachable!()).is_err());
+}
+
+#[test]
+fn expands_environment_variables_without_recursively_expanding_their_values() {
+    for path in [
+        "%ROOT%/source files",
+        "$ROOT/source files",
+        "${ROOT}/source files",
+        "$env:ROOT/source files",
+        "$ENV:ROOT/source files",
+    ] {
+        let expanded = super::expand_search_path(path, None, |name| {
+            assert_eq!(name, "ROOT");
+            Ok("root with spaces/$OTHER".to_owned())
+        })
+        .unwrap();
+        assert_eq!(expanded, "root with spaces/$OTHER/source files", "{path}");
+    }
+
+    let expanded = super::expand_search_path("${ROOT}/%CHILD%", None, |name| {
+        Ok(match name {
+            "ROOT" => "root",
+            "CHILD" => "child",
+            _ => panic!("unexpected variable"),
+        }
+        .to_owned())
+    })
+    .unwrap();
+    assert_eq!(expanded, "root/child");
+}
+
+#[test]
+fn path_expansion_reports_unknown_variables_and_empty_paths() {
+    for path in ["%MISSING%", "$MISSING", "${MISSING}", "$env:MISSING"] {
+        let error =
+            super::expand_search_path(path, None, |name| Err(format!("Unknown variable: {name}")))
+                .unwrap_err();
+        assert!(error.contains("MISSING"), "{path}");
+    }
+    assert!(
+        super::expand_search_path("${UNCLOSED", None, |_| unreachable!())
+            .unwrap_err()
+            .contains("missing '}'")
+    );
+    assert!(
+        super::expand_search_path("$EMPTY", None, |_| Ok(String::new()))
+            .unwrap_err()
+            .contains("expanded path is empty")
+    );
+}
+
+#[test]
+fn preserves_literal_paths_and_does_not_execute_shell_expressions() {
+    for path in [
+        "",
+        ".",
+        "..",
+        "../source files",
+        r"C:\source files",
+        r"\\server\share",
+        "папка/файлы",
+        "file~name",
+        "~someone",
+        "100%",
+        "%%",
+        "$(whoami)",
+        "`whoami`",
+    ] {
+        assert_eq!(
+            super::expand_search_path(path, None, |_| panic!("unexpected variable")).unwrap(),
+            path
+        );
+    }
+}
+
+#[test]
+fn home_shortcut_is_consistent_in_process_arguments_and_copied_command() {
+    let state = CommandState {
+        pattern: "~$HOME".into(),
+        path: "~".into(),
+        options: vec!["--glob=~$HOME".into()],
+        ..CommandState::default()
+    };
+    let home = std::env::home_dir().expect("test environment must have a home directory");
+    let home = home.to_str().expect("test home path must be Unicode");
+    assert_eq!(
+        state.arguments().unwrap(),
+        ["--glob=~$HOME", "--regexp", "~$HOME", "--", home].map(OsString::from)
+    );
+    assert!(state.command().unwrap().ends_with(&super::quote(home)));
+}
+
+#[test]
+fn environment_shortcuts_are_consistent_in_process_arguments_and_copied_command() {
+    let name = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    let value = std::env::var(name).expect("test environment must define the home variable");
+    for path in [
+        format!("%{name}%"),
+        format!("${name}"),
+        format!("${{{name}}}"),
+        format!("$env:{name}"),
+    ] {
+        let state = CommandState {
+            pattern: "needle".into(),
+            path,
+            ..CommandState::default()
+        };
+        assert_eq!(
+            state.arguments().unwrap(),
+            ["--regexp", "needle", "--", &value].map(OsString::from)
+        );
+        assert!(state.command().unwrap().ends_with(&super::quote(&value)));
+    }
+}
+
+#[test]
+fn invalid_search_path_prevents_both_execution_and_command_copying() {
+    let state = CommandState {
+        pattern: "needle".into(),
+        path: "${UNCLOSED".into(),
+        ..CommandState::default()
+    };
+    assert!(state.arguments().unwrap_err().contains("Search in:"));
+    assert!(state.command().unwrap_err().contains("Search in:"));
+}
+
 #[cfg(windows)]
 #[test]
 fn quotes_values_for_powershell() {

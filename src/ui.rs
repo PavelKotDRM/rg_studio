@@ -102,19 +102,39 @@ fn render_search_form(app: &mut RgStudio, ui: &mut egui::Ui, palette: Palette) {
     let mut pattern_changed = false;
     let mut path_changed = false;
     let mut open_builder = false;
+    let available_width = ui.available_width();
 
     egui::Frame::group(ui.style())
         .fill(palette.surface)
         .stroke(Stroke::new(1.0, palette.border))
         .show(ui, |ui| {
-            ui.columns(2, |columns| {
-                columns[0].label(
-                    RichText::new("SEARCH PATTERN (REGEX)")
-                        .small()
-                        .strong()
-                        .color(palette.muted_text),
-                );
-                columns[0].horizontal(|ui| {
+            if available_width >= 820.0 {
+                ui.columns(2, |columns| {
+                    render_pattern_field(
+                        &mut columns[0],
+                        &mut app.command.pattern,
+                        &mut pattern_changed,
+                        &mut open_builder,
+                        palette,
+                    );
+                    render_path_field(
+                        &mut columns[1],
+                        &mut app.command.path,
+                        &mut path_changed,
+                        palette,
+                    );
+                });
+            } else if available_width >= 600.0 {
+                ui.horizontal(|ui| {
+                    ui.add_sized(
+                        egui::vec2(165.0, 20.0),
+                        egui::Label::new(
+                            RichText::new("SEARCH PATTERN (REGEX)")
+                                .small()
+                                .strong()
+                                .color(palette.muted_text),
+                        ),
+                    );
                     let input_width = (ui.available_width() - 128.0).max(120.0);
                     pattern_changed |= ui
                         .add_sized(
@@ -132,24 +152,39 @@ fn render_search_form(app: &mut RgStudio, ui: &mut egui::Ui, palette: Palette) {
                         .changed();
                     open_builder = ui.button("Regex builder").clicked();
                 });
-
-                columns[1].label(
-                    RichText::new("SEARCH IN")
-                        .small()
-                        .strong()
-                        .color(palette.muted_text),
-                );
-                path_changed |= columns[1]
-                    .add_sized(
-                        egui::vec2(columns[1].available_width(), 36.0),
-                        themed_text_edit(
-                            egui::TextEdit::singleline(&mut app.command.path),
-                            palette,
+                ui.horizontal(|ui| {
+                    ui.add_sized(
+                        egui::vec2(165.0, 20.0),
+                        egui::Label::new(
+                            RichText::new("SEARCH IN")
+                                .small()
+                                .strong()
+                                .color(palette.muted_text),
+                        ),
+                    );
+                    path_changed |= ui
+                        .add_sized(
+                            egui::vec2(ui.available_width(), 36.0),
+                            themed_text_edit(
+                                egui::TextEdit::singleline(&mut app.command.path),
+                                palette,
+                            )
+                            .hint_text("."),
                         )
-                        .hint_text("."),
-                    )
-                    .changed();
-            });
+                        .on_hover_text("Supports ~, ~/folder, ~\\folder, %NAME%, $NAME, ${NAME}, and $env:NAME.")
+                        .changed();
+                });
+            } else {
+                render_pattern_field(
+                    ui,
+                    &mut app.command.pattern,
+                    &mut pattern_changed,
+                    &mut open_builder,
+                    palette,
+                );
+                ui.add_space(6.0);
+                render_path_field(ui, &mut app.command.path, &mut path_changed, palette);
+            }
         });
 
     if pattern_changed || path_changed {
@@ -172,7 +207,7 @@ fn render_search_form(app: &mut RgStudio, ui: &mut egui::Ui, palette: Palette) {
                     .color(palette.text),
             )
             .show_background(false)
-            .default_open(false)
+            .default_open(!app.command.extra_arguments.is_empty())
             .id_salt("advanced_arguments")
             .show(ui, |ui| {
                 let response = ui.add_sized(
@@ -191,41 +226,95 @@ fn render_search_form(app: &mut RgStudio, ui: &mut egui::Ui, palette: Palette) {
         });
 }
 
+fn render_pattern_field(
+    ui: &mut egui::Ui,
+    pattern: &mut String,
+    changed: &mut bool,
+    open_builder: &mut bool,
+    palette: Palette,
+) {
+    ui.label(
+        RichText::new("SEARCH PATTERN (REGEX)")
+            .small()
+            .strong()
+            .color(palette.muted_text),
+    );
+    ui.horizontal(|ui| {
+        let input_width = (ui.available_width() - 128.0).max(120.0);
+        *changed |= ui
+            .add_sized(
+                egui::vec2(input_width, 36.0),
+                themed_text_edit(egui::TextEdit::singleline(pattern), palette)
+                    .font(TextStyle::Monospace)
+                    .hint_text("e.g. TODO|FIXME"),
+            )
+            .on_hover_text(
+                "This searches file contents. For file names, use Files > Include/exclude glob, e.g. *.rs.",
+            )
+            .changed();
+        *open_builder = ui.button("Regex builder").clicked();
+    });
+}
+
+fn render_path_field(ui: &mut egui::Ui, path: &mut String, changed: &mut bool, palette: Palette) {
+    ui.label(
+        RichText::new("SEARCH IN")
+            .small()
+            .strong()
+            .color(palette.muted_text),
+    );
+    *changed |= ui
+        .add_sized(
+            egui::vec2(ui.available_width(), 36.0),
+            themed_text_edit(egui::TextEdit::singleline(path), palette).hint_text("."),
+        )
+        .on_hover_text("Supports ~, ~/folder, ~\\folder, %NAME%, $NAME, ${NAME}, and $env:NAME.")
+        .changed();
+}
+
 fn render_option_toolbar(app: &mut RgStudio, ui: &mut egui::Ui, palette: Palette) {
     ui.horizontal_wrapped(|ui| {
-        for category in Category::ALL {
-            let selected = app.category == category;
-            let button = egui::Button::new(RichText::new(category.title()).color(if selected {
-                palette.text
-            } else {
-                palette.muted_text
-            }))
-            .fill(if selected {
-                palette.selected_surface
-            } else {
-                Color32::TRANSPARENT
-            })
-            .stroke(Stroke::new(
-                1.0,
-                if selected {
-                    palette.accent
-                } else {
-                    palette.border
-                },
-            ));
-
-            if ui.add(button).clicked() {
-                app.category = category;
-            }
-        }
-
+        render_category_buttons(app, ui, palette);
         ui.separator();
-        ui.add(
-            themed_text_edit(egui::TextEdit::singleline(&mut app.filter), palette)
-                .desired_width(210.0)
-                .hint_text("Filter options"),
-        );
+        render_option_filter(app, ui, palette);
     });
+}
+
+fn render_category_buttons(app: &mut RgStudio, ui: &mut egui::Ui, palette: Palette) {
+    for category in Category::ALL {
+        let selected = app.category == category;
+        let button = egui::Button::new(RichText::new(category.title()).color(if selected {
+            palette.text
+        } else {
+            palette.muted_text
+        }))
+        .fill(if selected {
+            palette.selected_surface
+        } else {
+            Color32::TRANSPARENT
+        })
+        .stroke(Stroke::new(
+            1.0,
+            if selected {
+                palette.accent
+            } else {
+                palette.border
+            },
+        ));
+
+        if ui.add(button).clicked() {
+            app.category = category;
+        }
+    }
+}
+
+fn render_option_filter(app: &mut RgStudio, ui: &mut egui::Ui, palette: Palette) {
+    let width = ui.available_width();
+    ui.add_sized(
+        egui::vec2(width.clamp(120.0, 280.0), 34.0),
+        themed_text_edit(egui::TextEdit::singleline(&mut app.filter), palette)
+            .hint_text("Filter options"),
+    );
 }
 
 fn render_option_catalog(app: &mut RgStudio, ui: &mut egui::Ui, palette: Palette) {
@@ -297,7 +386,7 @@ fn render_option_catalog(app: &mut RgStudio, ui: &mut egui::Ui, palette: Palette
                                     ui.set_width((card_width - 16.0).max(180.0));
                                     match spec.kind {
                                         OptionKind::Switch => {
-                                            ui.horizontal(|ui| {
+                                            ui.vertical(|ui| {
                                                 let response =
                                                     ui.checkbox(&mut state.enabled, spec.label);
                                                 changed |= response.changed();
@@ -314,30 +403,26 @@ fn render_option_catalog(app: &mut RgStudio, ui: &mut egui::Ui, palette: Palette
                                         }
                                         OptionKind::Value(hint) => {
                                             ui.vertical(|ui| {
-                                                ui.horizontal(|ui| {
-                                                    let response =
-                                                        ui.checkbox(&mut state.enabled, spec.label);
-                                                    changed |= response.changed();
-                                                    if response.changed() && state.enabled {
-                                                        newly_enabled_flag = Some(spec.flag);
-                                                    }
-                                                    let input_width =
-                                                        (ui.available_width() - 8.0).max(90.0);
-                                                    let input_response =
-                                                        ui.add_enabled_ui(state.enabled, |ui| {
-                                                            ui.add_sized(
-                                                                egui::vec2(input_width, 30.0),
-                                                                themed_text_edit(
-                                                                    egui::TextEdit::singleline(
-                                                                        &mut state.value,
-                                                                    ),
-                                                                    palette,
-                                                                )
-                                                                .hint_text(hint),
+                                                let response =
+                                                    ui.checkbox(&mut state.enabled, spec.label);
+                                                changed |= response.changed();
+                                                if response.changed() && state.enabled {
+                                                    newly_enabled_flag = Some(spec.flag);
+                                                }
+                                                let input_response =
+                                                    ui.add_enabled_ui(state.enabled, |ui| {
+                                                        ui.add_sized(
+                                                            egui::vec2(ui.available_width(), 30.0),
+                                                            themed_text_edit(
+                                                                egui::TextEdit::singleline(
+                                                                    &mut state.value,
+                                                                ),
+                                                                palette,
                                                             )
-                                                        });
-                                                    changed |= input_response.inner.changed();
-                                                });
+                                                            .hint_text(hint),
+                                                        )
+                                                    });
+                                                changed |= input_response.inner.changed();
                                                 ui.label(
                                                     RichText::new(spec.flag)
                                                         .small()
@@ -522,7 +607,7 @@ mod tests {
     };
     use super::render;
 
-    fn rendered_bottom(size: eframe::egui::Vec2, preview_open: bool) -> f32 {
+    fn rendered_bounds(size: eframe::egui::Vec2, preview_open: bool) -> Rect {
         let context = Context::default();
         let mut app = RgStudio {
             preview_open,
@@ -531,7 +616,7 @@ mod tests {
         theme::apply(&context, app.dark_theme);
 
         let screen_rect = Rect::from_min_size(Pos2::ZERO, size);
-        let mut bottom = 0.0;
+        let mut bounds = Rect::NOTHING;
         let mut output = context.run_ui(
             RawInput {
                 screen_rect: Some(screen_rect),
@@ -539,29 +624,38 @@ mod tests {
             },
             |ui| {
                 render(&mut app, ui);
-                bottom = ui.min_rect().bottom();
+                bounds = ui.min_rect();
             },
         );
         output.textures_delta.clear();
-        bottom
+        bounds
     }
 
     #[test]
     fn expanded_preview_and_command_fit_the_default_viewport() {
-        let bottom = rendered_bottom(vec2(1000.0, 640.0), true);
+        let bottom = rendered_bounds(vec2(1000.0, 640.0), true).bottom();
         assert!(bottom <= 640.0, "rendered content ends at y={bottom}");
     }
 
     #[test]
     fn command_fits_the_minimum_viewport_with_preview_collapsed() {
-        let bottom = rendered_bottom(vec2(700.0, 440.0), false);
+        let bottom = rendered_bounds(vec2(700.0, 440.0), false).bottom();
         assert!(bottom <= 440.0, "rendered content ends at y={bottom}");
     }
 
     #[test]
     fn command_fits_the_minimum_viewport_with_preview_open() {
-        let bottom = rendered_bottom(vec2(700.0, 440.0), true);
+        let bottom = rendered_bounds(vec2(700.0, 440.0), true).bottom();
         assert!(bottom <= 440.0, "rendered content ends at y={bottom}");
+    }
+
+    #[test]
+    fn compact_layout_fits_the_minimum_viewport_width() {
+        let right = rendered_bounds(vec2(700.0, 440.0), true).right();
+        assert!(
+            right <= 704.0,
+            "rendered content extends more than a frame stroke past x=700: {right}"
+        );
     }
 
     #[test]
